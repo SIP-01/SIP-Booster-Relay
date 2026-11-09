@@ -1153,7 +1153,7 @@ export class RelayWebSocket implements DurableObject {
       if (hasSearch) {
         // COUNT with search is a SIP-01 relay-profile feature (spec §15):
         // supported for kind 39697 filters only. `kinds` omitted is fine in
-        // sip01 mode (39697 is the only stored kind); elsewhere an omitted
+        // sip01 mode (search covers kind 39697 only); elsewhere an omitted
         // kinds would silently undercount, so require an explicit 39697.
         const kinds = Array.isArray(filter.kinds) ? filter.kinds : undefined;
         const sipOnly = SIP01_INDEXING && (kinds === undefined
