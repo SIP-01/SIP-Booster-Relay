@@ -2,7 +2,7 @@
 
 ## "blocked: event kind X not allowed on this relay"
 
-You are in `sip01` mode (default): only kind 39697 (+5, +9735) are stored.
+You are in `sip01` mode (default): only kind 39697 (+5, +9735, +16919 crawler heartbeats, +39698 capability announcements) are stored.
 Switch `RELAY_MODE` to `'hybrid'` in `src/config.ts` for a general relay with
 SIP-01 indexing.
 
