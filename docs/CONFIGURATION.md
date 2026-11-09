@@ -9,7 +9,7 @@ keys must never be committed.
 
 | Option | Values | Default | Meaning |
 |---|---|---|---|
-| `RELAY_MODE` | `'sip01'` \| `'hybrid'` \| `'general'` | `'sip01'` | What the relay accepts. `sip01`: only kind 39697 (+ kind 5 deletions, kind 9735 zap receipts). `hybrid`: all kinds + SIP-01 indexing. `general`: plain relay, SIP-01 features off. |
+| `RELAY_MODE` | `'sip01'` \| `'hybrid'` \| `'general'` | `'sip01'` | What the relay accepts. `sip01`: only kind 39697 (+ kind 5 deletions, kind 9735 zap receipts, kind 16919 crawler heartbeats, kind 39698 capability announcements). `hybrid`: all kinds + SIP-01 indexing. `general`: plain relay, SIP-01 features off. |
 
 ## SIP-01
 
@@ -18,7 +18,7 @@ keys must never be committed.
 | `SIP01_ENABLED` | derived from mode | Master switch (off in `general` mode). |
 | `SIP01_VALIDATION` | `true` | Reject invalid kind 39697 events with `OK false invalid: …` (SIP-01 §12.4). |
 | `SIP01_INDEXING` | on when enabled | Maintain the document/observation/indexer tables and SIP-01 search. |
-| `SIP01_MODE_ALLOWED_KINDS` | `{39697, 5, 9735, 16919}` | Kinds stored in `sip01` mode (16919 = indexstr/Crawlstr crawler heartbeats, stored unvalidated as ordinary replaceable events so the ecosystem network-health view works against this relay). |
+| `SIP01_MODE_ALLOWED_KINDS` | `{39697, 5, 9735, 16919, 39698}` | Kinds stored in `sip01` mode (16919 = indexstr/Crawlstr crawler heartbeats, stored unvalidated as ordinary replaceable events so the ecosystem network-health view works against this relay; 39698 = ORBSTR capability announcements, stored unvalidated as ordinary addressable events so the ecosystem capability directory works against this relay). |
 | `SIP01_INDEXER_RATE_LIMIT` | `120/min`, burst 240 | Per-connection write bucket for kind 39697 (crawlers burst). |
 | `SIP01_MAX_EVENT_BYTES` | `65536` | Max serialized size of a kind 39697 event. |
 | `SIP01_INDEXER_POLICY` | `'open'` | `'open'` \| `'allowlist'` \| `'blocklist'` for indexer pubkeys. |

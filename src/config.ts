@@ -17,8 +17,10 @@ import { RelayInfo } from './types';
  *
  *  - "sip01"   — SIP-01 optimized index relay. Only kind 39697 observations
  *                (plus kind 5 deletions, kind 9735 zap receipts when payment
- *                is enabled, and kind 16919 crawler heartbeats so the
- *                ecosystem's network-health view works against this relay)
+ *                is enabled, kind 16919 crawler heartbeats so the
+ *                ecosystem's network-health view works against this relay,
+ *                and kind 39698 ORBSTR capability announcements so the
+ *                ecosystem's capability directory works against this relay)
  *                are accepted for storage. Reads stay fully NIP-01
  *                compatible. This is the recommended mode for a dedicated
  *                search-index node.
@@ -55,9 +57,10 @@ export const SIP01_HEARTBEAT_KIND = 16919;
 
 /** Kinds accepted for storage in "sip01" mode (kind 5 = deletions, kind
  *  9735 = zap receipts for payment verification, kind 16919 = crawler
- *  heartbeats). NIP-42 auth events (kind 22242) are never stored by any
- *  mode. */
-export const SIP01_MODE_ALLOWED_KINDS = new Set<number>([39697, 5, 9735, SIP01_HEARTBEAT_KIND]);
+ *  heartbeats, kind 39698 = ORBSTR capability announcements, stored
+ *  unvalidated as ordinary addressable events). NIP-42 auth events (kind
+ *  22242) are never stored by any mode. */
+export const SIP01_MODE_ALLOWED_KINDS = new Set<number>([39697, 5, 9735, SIP01_HEARTBEAT_KIND, 39698]);
 
 /** Per-indexer write rate limit for kind 39697 (token bucket: sustained
  *  rate per ms + burst capacity). Crawlers publish bursts of observations;
