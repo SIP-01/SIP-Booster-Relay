@@ -19,7 +19,7 @@
 /** Single-letter tags cached for generic NIP-01 `#x` tag filtering.
  *  Upstream set (p,e,a,t,d,r,L,s,u) plus SIP-01's filterable `l`, `x` and
  *  `v` (the UNCAGED relay profile's baseline set: #d, #u, #t, #x, #v, #l). */
-export const CACHED_TAG_NAMES = ['p', 'e', 'a', 't', 'd', 'r', 'L', 's', 'u', 'l', 'x', 'v'] as const;
+export const CACHED_TAG_NAMES = ['p', 'e', 'a', 't', 'd', 'r', 'L', 's', 'u', 'l', 'x', 'v', 'i', 'k'] as const;
 
 /** SQL for the SIP-01 tables (idempotent). */
 export const SIP01_SCHEMA_STATEMENTS: string[] = [
@@ -93,7 +93,7 @@ export const SIP01_SCHEMA_STATEMENTS: string[] = [
  * v9: FTS5 search index. v10: heal half-applied v9. v11: cache the `v`
  * (schema-version) tag for baseline `#v` filters (relay profile §4).
  */
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export function migrationV7Statements(): string[] {
   return [
@@ -182,6 +182,20 @@ export function migrationV11Statements(): string[] {
       SELECT e.id, e.pubkey, e.kind, e.created_at, t.tag_name, t.tag_value
       FROM events e INNER JOIN tags t ON e.id = t.event_id
       WHERE t.tag_name = 'v'`,
+  ];
+}
+
+/**
+ * v12: backfill NIP-73 external identifier tags into the multi-value tag cache.
+ * NIP-25 external-content reactions use kind 17 with #k=web and #i=<URL>;
+ * NIP-51 bookmark-list references may also use the same tags. Idempotent.
+ */
+export function migrationV12Statements(): string[] {
+  return [
+    `INSERT OR IGNORE INTO event_tags_cache_multi (event_id, pubkey, kind, created_at, tag_type, tag_value)
+      SELECT e.id, e.pubkey, e.kind, e.created_at, t.tag_name, t.tag_value
+      FROM events e INNER JOIN tags t ON e.id = t.event_id
+      WHERE t.tag_name IN ('i', 'k')`,
   ];
 }
 
