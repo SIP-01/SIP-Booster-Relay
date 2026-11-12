@@ -17,8 +17,8 @@
  */
 
 /** Single-letter tags cached for generic NIP-01 `#x` tag filtering.
- *  Upstream set (p,e,a,t,d,r,L,s,u) plus SIP-01's filterable `l`, `x` and
- *  `v` (the UNCAGED relay profile's baseline set: #d, #u, #t, #x, #v, #l). */
+ *  NIP-01 single-letter tags plus SIP-01's filterable `l`, `x`, `v` and
+ *  NIP-73 `i`/`k` external identifiers (including NIP-25 kind-17 web reactions). */
 export const CACHED_TAG_NAMES = ['p', 'e', 'a', 't', 'd', 'r', 'L', 's', 'u', 'l', 'x', 'v', 'i', 'k'] as const;
 
 /** SQL for the SIP-01 tables (idempotent). */
