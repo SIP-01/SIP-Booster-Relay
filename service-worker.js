@@ -7099,7 +7099,7 @@ _RelayWebSocket.ENDPOINT_HINTS = {
 var RelayWebSocket = _RelayWebSocket;
 
 // src/sip01/schema.ts
-var CACHED_TAG_NAMES = ["p", "e", "a", "t", "d", "r", "L", "s", "u", "l", "x", "v"];
+var CACHED_TAG_NAMES = ["p", "e", "a", "t", "d", "r", "L", "s", "u", "l", "x", "v", "i", "k"];
 var SIP01_SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS sip01_documents (
     d TEXT PRIMARY KEY,
@@ -7161,7 +7161,7 @@ var SIP01_SCHEMA_STATEMENTS = [
     value INTEGER NOT NULL DEFAULT 0
   )`
 ];
-var SCHEMA_VERSION = 11;
+var SCHEMA_VERSION = 12;
 function migrationV7Statements() {
   return [
     // Rebuild event_tags_cache_multi without the restrictive CHECK list.
@@ -7232,6 +7232,15 @@ function migrationV11Statements() {
   ];
 }
 __name(migrationV11Statements, "migrationV11Statements");
+function migrationV12Statements() {
+  return [
+    `INSERT OR IGNORE INTO event_tags_cache_multi (event_id, pubkey, kind, created_at, tag_type, tag_value)
+      SELECT e.id, e.pubkey, e.kind, e.created_at, t.tag_name, t.tag_value
+      FROM events e INNER JOIN tags t ON e.id = t.event_id
+      WHERE t.tag_name IN ('i', 'k')`
+  ];
+}
+__name(migrationV12Statements, "migrationV12Statements");
 var SERVICE_SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS service_settings (
     key TEXT PRIMARY KEY,
@@ -7460,7 +7469,8 @@ async function initializeDatabase(db) {
         ...currentVersion < 8 ? migrationV8Statements() : [],
         ...currentVersion < 9 ? migrationV9Statements() : [],
         ...currentVersion < 10 ? migrationV10Statements() : [],
-        ...currentVersion < 11 ? migrationV11Statements() : []
+        ...currentVersion < 11 ? migrationV11Statements() : [],
+        ...currentVersion < 12 ? migrationV12Statements() : []
       ];
       for (const statement of migrationStatements) {
         try {
