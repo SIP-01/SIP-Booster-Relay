@@ -22,6 +22,27 @@ out of scope for an index relay); NIP-13 PoW (config placeholder only);
 NIP-40 expiration (events are retained per pruning policy);
 NIP-70 relay-gated writes (use allowlists instead).
 
+## NIP-25 / NIP-73 / bookmark interoperability
+
+This relay treats these event kinds as ordinary NIP-01 events; it does not
+rewrite or decrypt their payloads.
+
+- Native NIP-25 reactions (kind 7) and external-content reactions (kind 17)
+  are accepted by the generic event path.
+- NIP-73 external identifiers and NIP-25 web reactions use single-letter
+  tags i and k. Both are indexed by schema v12, including a backfill for
+  events already stored before the upgrade.
+- NIP-51 bookmark lists (kinds 10003 and 30003) and NIP-B0 public bookmarks
+  (kind 39701) are stored and returned as generic events. The relay does not
+  decrypt private NIP-51 content.
+- NIP-85 provider lists (kind 10040) and assertion events (kinds 30382–30385)
+  are generic NIP-01 events. The relay does not calculate or endorse trust
+  scores; the client verifies the selected provider, signature and subject.
+
+A kind-17 web-reaction query can use a baseline filter with kinds [17],
+tag k equal to web, and tag i equal to the normalized URL. These tag filters
+work on fresh databases and upgraded databases after migration v12.
+
 ## Message-level summary
 
 Client → relay: `EVENT`, `REQ`, `CLOSE`, `COUNT`, `AUTH`, `NEG-OPEN`,
