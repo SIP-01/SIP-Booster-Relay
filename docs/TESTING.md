@@ -56,6 +56,17 @@ mode the suite also runs automatically in the background.
 - empty-vs-nonempty sets;
 - protocol version byte `0x61`.
 
+### NIP-73 external tag filters
+
+- Schema v12 adds i and k to the cached single-letter tags.
+- Migration v12 backfills existing events from the generic tags table into
+  event_tags_cache_multi, so kind-17 web reactions and NIP-73 references
+  remain queryable after upgrading existing D1 databases.
+- Verify with a REQ/COUNT filter using kinds [17], #k=web and #i=<normalized URL>.
+- Verify the same filter against a fresh database and a database upgraded
+  from schema v11. The relay stores NIP-51 and NIP-85 payloads generically;
+  it must never decrypt private NIP-51 content or claim to calculate WoT ranks.
+
 ## Adding tests
 
 Add cases to `shared/selftest.js` (and vectors to `shared/vectors.js` when
