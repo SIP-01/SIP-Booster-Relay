@@ -22,6 +22,12 @@ export const SIP01_NOSTR_COMPATIBLE_KINDS = Object.freeze([
 ]);
 
 /** NIP-90 job requests 5000-5999, results 6000-6999, feedback 7000. */
+export function isSip01EventKindAllowed(kind, allowNip90 = false, heartbeatKind = 16919) {
+  return SIP01_NOSTR_COMPATIBLE_KINDS.includes(kind) ||
+    kind === 5 || kind === 9735 || kind === heartbeatKind || kind === 39698 ||
+    (allowNip90 && isNip90EventKind(kind));
+}
+
 export function isNip90EventKind(kind) {
   return Number.isSafeInteger(kind) &&
     ((kind >= 5000 && kind <= 6999) || kind === 7000);
