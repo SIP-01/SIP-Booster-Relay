@@ -271,7 +271,7 @@ export const relayInfo: RelayInfo = {
     // min_pow_difficulty: 0,
     auth_required: AUTH_REQUIRED,
     payment_required: PAY_TO_RELAY_ENABLED,
-    restricted_writes: PAY_TO_RELAY_ENABLED || SIP01_INDEXER_POLICY === 'allowlist',
+    restricted_writes: PAY_TO_RELAY_ENABLED || (SIP01_INDEXER_POLICY as string) === 'allowlist',
     // created_at_lower_limit: 0,
     created_at_upper_limit: 900, // reject events more than 15 min in the future
     default_limit: 100,
