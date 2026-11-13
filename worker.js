@@ -81,6 +81,7 @@ __export(config_exports, {
   SIP01_INDEXING: () => SIP01_INDEXING,
   SIP01_MAX_EVENT_BYTES: () => SIP01_MAX_EVENT_BYTES,
   SIP01_MODE_ALLOWED_KINDS: () => SIP01_MODE_ALLOWED_KINDS,
+  SIP01_NIP90_ENABLED: () => SIP01_NIP90_ENABLED,
   SIP01_PRUNE_ALLOWED: () => SIP01_PRUNE_ALLOWED,
   SIP01_SCOPE: () => SIP01_SCOPE,
   SIP01_SCOPE_DOCUMENT_TYPES: () => SIP01_SCOPE_DOCUMENT_TYPES,
@@ -126,6 +127,10 @@ var SIP01_NOSTR_COMPATIBLE_KINDS = Object.freeze([
   // NIP-51 global bookmark list
   30003,
   // NIP-51 categorized bookmark set
+  1984,
+  // NIP-56 abuse report
+  1985,
+  // NIP-32 distributed label
   39701,
   // NIP-B0 public web bookmark
   10040,
@@ -136,9 +141,35 @@ var SIP01_NOSTR_COMPATIBLE_KINDS = Object.freeze([
   // NIP-85 event assertion (transport only)
   30384,
   // NIP-85 addressable-event assertion (transport only)
-  30385
+  30385,
   // NIP-85 external-identifier assertion (transport only)
+  31989,
+  // NIP-89 handler recommendation
+  31990
+  // NIP-89 handler information
 ]);
+function isNip90EventKind(kind) {
+  return Number.isSafeInteger(kind) && (kind >= 5e3 && kind <= 6999 || kind === 7e3);
+}
+__name(isNip90EventKind, "isNip90EventKind");
+function evaluateEventExpiration(tags, nowSeconds = Math.floor(Date.now() / 1e3)) {
+  const rows = (Array.isArray(tags) ? tags : []).filter(
+    (tag) => Array.isArray(tag) && tag[0] === "expiration"
+  );
+  if (rows.length === 0)
+    return { valid: true, expired: false, expiresAt: null };
+  const values = rows.map((row) => row[1]);
+  if (values.some((value) => typeof value !== "string" || value.length === 0 || Array.from(value).some((char) => char < "0" || char > "9"))) {
+    return { valid: false, expired: false, expiresAt: null };
+  }
+  const timestamps = values.map(Number);
+  if (timestamps.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    return { valid: false, expired: false, expiresAt: null };
+  }
+  const expiresAt = Math.min(...timestamps);
+  return { valid: true, expired: expiresAt <= nowSeconds, expiresAt };
+}
+__name(evaluateEventExpiration, "evaluateEventExpiration");
 
 // src/config.ts
 var RELAY_MODE = "sip01";
@@ -146,6 +177,7 @@ var SIP01_ENABLED = RELAY_MODE !== "general";
 var SIP01_VALIDATION = true;
 var SIP01_INDEXING = SIP01_ENABLED;
 var SIP01_HEARTBEAT_KIND = 16919;
+var SIP01_NIP90_ENABLED = false;
 var SIP01_MODE_ALLOWED_KINDS = /* @__PURE__ */ new Set([
   ...SIP01_NOSTR_COMPATIBLE_KINDS,
   5,
@@ -440,7 +472,7 @@ function isPubkeyAllowed(pubkey) {
 }
 __name(isPubkeyAllowed, "isPubkeyAllowed");
 function isEventKindAllowed(kind) {
-  if (RELAY_MODE === "sip01" && !SIP01_MODE_ALLOWED_KINDS.has(kind)) {
+  if (RELAY_MODE === "sip01" && !SIP01_MODE_ALLOWED_KINDS.has(kind) && !(SIP01_NIP90_ENABLED && isNip90EventKind(kind))) {
     return false;
   }
   if (allowedEventKinds.size > 0 && !allowedEventKinds.has(kind)) {
@@ -4770,7 +4802,14 @@ function clampSearchLimit(limit) {
 }
 __name(clampSearchLimit, "clampSearchLimit");
 function eventFilterExtras(filter) {
-  const conditions = [];
+  const conditions = [
+    `NOT EXISTS (
+      SELECT 1 FROM tags expiration_tag
+      WHERE expiration_tag.event_id = e.id
+        AND expiration_tag.tag_name = 'expiration'
+        AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+    )`
+  ];
   const params = [];
   if (filter.ids && filter.ids.length > 0) {
     conditions.push(`e.id IN (${filter.ids.map(() => "?").join(",")})`);
@@ -4888,7 +4927,14 @@ async function executeSearch(session, filter) {
   const genericKinds = kinds === void 0 ? void 0 : otherKinds;
   const wantGeneric = kinds === void 0 || genericKinds !== void 0 && genericKinds.length > 0;
   if (wantGeneric && (parsed.keywords.length > 0 || parsed.phrases.length > 0)) {
-    const conditions = [];
+    const conditions = [
+      `NOT EXISTS (
+        SELECT 1 FROM tags expiration_tag
+        WHERE expiration_tag.event_id = e.id
+          AND expiration_tag.tag_name = 'expiration'
+          AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+      )`
+    ];
     const params = [];
     for (const termRaw of [...parsed.keywords, ...parsed.phrases]) {
       conditions.push(`lower(e.content) LIKE ? ESCAPE '\\'`);
@@ -6409,6 +6455,15 @@ async function processEvent(event, sessionId, env) {
     if (event.kind >= 2e4 && event.kind < 3e4) {
       return { success: true, message: "Ephemeral event broadcast" };
     }
+    const expiration = evaluateEventExpiration(event.tags);
+    if (!expiration.valid) {
+      await bumpMetric(session, "events_invalid");
+      return { success: false, message: "invalid: malformed NIP-40 expiration tag" };
+    }
+    if (expiration.expired) {
+      await bumpMetric(session, "events_invalid");
+      return { success: false, message: "invalid: event has expired (NIP-40)" };
+    }
     if (event.kind === SIP01_KIND && SIP01_ENABLED2) {
       if (!isIndexerAllowed2(event.pubkey)) {
         await bumpMetric(session, "sip01_indexer_blocked");
@@ -6860,12 +6915,32 @@ function buildIdSelect(filter) {
 __name(buildIdSelect, "buildIdSelect");
 function buildCountQuery(filter) {
   const { sql, params } = buildIdSelect(filter);
-  return { sql: `SELECT COUNT(*) as count FROM (${sql})`, params };
+  const liveIds = `SELECT q.id FROM (${sql}) q
+    INNER JOIN events live_event ON live_event.id = q.id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM tags expiration_tag
+      WHERE expiration_tag.event_id = live_event.id
+        AND expiration_tag.tag_name = 'expiration'
+        AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+    )`;
+  return { sql: `SELECT COUNT(*) as count FROM (${liveIds})`, params };
 }
 __name(buildCountQuery, "buildCountQuery");
 function buildQuery(filter) {
   const params = [];
-  const conditions = [];
+  const liveExpirationCondition = `NOT EXISTS (
+    SELECT 1 FROM tags expiration_tag
+    WHERE expiration_tag.event_id = events.id
+      AND expiration_tag.tag_name = 'expiration'
+      AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+  )`;
+  const eventExpirationCondition = `NOT EXISTS (
+    SELECT 1 FROM tags expiration_tag
+    WHERE expiration_tag.event_id = e.id
+      AND expiration_tag.tag_name = 'expiration'
+      AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+  )`;
+  const conditions = [liveExpirationCondition];
   let tagCount = 0;
   const directTags = [];
   const otherTags = [];
@@ -6882,7 +6957,7 @@ function buildQuery(filter) {
   }
   if (directTags.length > 0 && otherTags.length === 0) {
     let sql2;
-    const whereConditions = [];
+    const whereConditions = [eventExpirationCondition];
     const cacheAlias = directTags.length === 1 ? "m" : "m0";
     if (directTags.length === 1) {
       const tagFilter = directTags[0];
@@ -6952,7 +7027,7 @@ function buildQuery(filter) {
         INNER JOIN tags t ON e.id = t.event_id
         WHERE t.tag_name = ? AND t.tag_value IN (${tagFilter.values.map(() => "?").join(",")})`;
       params.push(tagFilter.name, ...tagFilter.values);
-      const whereConditions2 = [];
+      const whereConditions2 = [eventExpirationCondition];
       if (filter.ids && filter.ids.length > 0) {
         whereConditions2.push(`e.id IN (${filter.ids.map(() => "?").join(",")})`);
         params.push(...filter.ids);
@@ -6996,7 +7071,7 @@ function buildQuery(filter) {
     let sql2 = `SELECT ${EVENT_COLS} FROM events e
       INNER JOIN tags t ON e.id = t.event_id
       WHERE ${tagConditions}`;
-    const whereConditions = [];
+    const whereConditions = [eventExpirationCondition];
     if (filter.ids && filter.ids.length > 0) {
       whereConditions.push(`e.id IN (${filter.ids.map(() => "?").join(",")})`);
       params.push(...filter.ids);
@@ -7297,7 +7372,10 @@ async function queryEvents(filters, bookmark, env) {
         }
       }
     }
-    const events = Array.from(eventSet.values()).sort((a, b) => {
+    const events = Array.from(eventSet.values()).filter((event) => {
+      const expiration = evaluateEventExpiration(event.tags);
+      return expiration.valid && !expiration.expired;
+    }).sort((a, b) => {
       if (b.created_at !== a.created_at) {
         return b.created_at - a.created_at;
       }
@@ -7324,7 +7402,14 @@ async function countEvents(filters, bookmark, env) {
       continue;
     }
     const { sql: sql2, params: p } = buildIdSelect(filter);
-    selects.push(sql2);
+    selects.push(`SELECT q.id FROM (${sql2}) q
+      INNER JOIN events live_event ON live_event.id = q.id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM tags expiration_tag
+        WHERE expiration_tag.event_id = live_event.id
+          AND expiration_tag.tag_name = 'expiration'
+          AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+      )`);
     params.push(...p);
   }
   if (selects.length === 0)
@@ -7342,7 +7427,14 @@ __name(countEvents, "countEvents");
 async function querySyncItems(filter, env) {
   await ensureDatabase(env.RELAY_DATABASE);
   const session = env.RELAY_DATABASE.withSession("first-unconstrained");
-  const conditions = [];
+  const conditions = [
+    `NOT EXISTS (
+      SELECT 1 FROM tags expiration_tag
+      WHERE expiration_tag.event_id = events.id
+        AND expiration_tag.tag_name = 'expiration'
+        AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+    )`
+  ];
   const params = [];
   if (filter.ids && filter.ids.length > 0) {
     conditions.push(`id IN (${filter.ids.map(() => "?").join(",")})`);
@@ -7400,7 +7492,7 @@ function handleRelayInfoRequest(request, env) {
     pubkey: runtimeRelayPubkey(env),
     contact: runtimeRelayContact(env)
   };
-  const nips = /* @__PURE__ */ new Set([1, 5, 9, 11, 16, 33, 42]);
+  const nips = /* @__PURE__ */ new Set([1, 5, 9, 11, 16, 33, 40, 42]);
   if (NIP45_ENABLED2)
     nips.add(45);
   if (NIP50_ENABLED2)
