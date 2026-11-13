@@ -113,12 +113,46 @@ __export(config_exports, {
   sip01AllowedIndexers: () => sip01AllowedIndexers,
   sip01BlockedIndexers: () => sip01BlockedIndexers
 });
+
+// shared/nostr-nip-kinds.js
+var SIP01_NOSTR_COMPATIBLE_KINDS = Object.freeze([
+  39697,
+  // SIP-01 web-index observation
+  7,
+  // NIP-25 reaction to a native Nostr event
+  17,
+  // NIP-25 reaction to external content, using NIP-73 i/k tags
+  10003,
+  // NIP-51 global bookmark list
+  30003,
+  // NIP-51 categorized bookmark set
+  39701,
+  // NIP-B0 public web bookmark
+  10040,
+  // NIP-85 trusted-provider list (transport only)
+  30382,
+  // NIP-85 user assertion (transport only)
+  30383,
+  // NIP-85 event assertion (transport only)
+  30384,
+  // NIP-85 addressable-event assertion (transport only)
+  30385
+  // NIP-85 external-identifier assertion (transport only)
+]);
+
+// src/config.ts
 var RELAY_MODE = "sip01";
 var SIP01_ENABLED = RELAY_MODE !== "general";
 var SIP01_VALIDATION = true;
 var SIP01_INDEXING = SIP01_ENABLED;
 var SIP01_HEARTBEAT_KIND = 16919;
-var SIP01_MODE_ALLOWED_KINDS = /* @__PURE__ */ new Set([39697, 5, 9735, SIP01_HEARTBEAT_KIND, 39698]);
+var SIP01_MODE_ALLOWED_KINDS = /* @__PURE__ */ new Set([
+  ...SIP01_NOSTR_COMPATIBLE_KINDS,
+  5,
+  9735,
+  SIP01_HEARTBEAT_KIND,
+  39698
+]);
 var SIP01_INDEXER_RATE_LIMIT = { rate: 120 / 6e4, capacity: 240 };
 var SIP01_MAX_EVENT_BYTES = 64 * 1024;
 var SIP01_INDEXER_POLICY = "open";
@@ -169,7 +203,7 @@ var relayInfo = {
   description: "A serverless SIP-01 search index relay \u2014 decentralized web-index observations (Nostr kind 39697) on Cloudflare Workers + D1. One shared decentralized index. Many independent indexers. No single owner.",
   pubkey: "90afdf5f3f5b7e0a2db8a700e7f4edae542f95ea524e1bee522dce9bcb3b7b14",
   contact: "npub1jzha7heltdlq5tdc5uqw0a8d4e2zl9022f8phmjj9h8fhjem0v2qmtdeke",
-  supported_nips: [1, 5, 9, 11, 16, 33, 42, 45, 50, 77],
+  supported_nips: [1, 5, 9, 11, 16, 25, 33, 42, 45, 50, 51, 73, 77],
   software: "https://github.com/NostrDanish/SIP-Booster-Relay",
   version: "1.1.0",
   icon: "https://raw.githubusercontent.com/NostrDanish/SIP-Booster-Relay/main/images/icon.png",
@@ -4570,14 +4604,16 @@ async function getSip01Stats(session) {
   for (const row of metricsRows.results ?? []) {
     metrics[row.key] = row.value;
   }
+  const last24hRow = last24h.results?.[0];
+  const last7dRow = last7d.results?.[0];
   const sizeBytes = await getDatabaseSizeBytes(session);
   const totalsRow = totals.results?.[0] ?? {};
   return {
     documents: totalsRow.documents ?? 0,
     observations: totalsRow.observations ?? 0,
     indexers: totalsRow.indexers ?? 0,
-    observations_24h: last24h.results?.[0]?.n ?? 0,
-    observations_7d: last7d.results?.[0]?.n ?? 0,
+    observations_24h: last24hRow?.n ?? 0,
+    observations_7d: last7dRow?.n ?? 0,
     top_hosts: topHosts.results ?? [],
     top_languages: topLanguages.results ?? [],
     top_mime_types: topMimes.results ?? [],
@@ -5489,7 +5525,7 @@ async function orchestrateDeploy(req) {
     if (bundle.length < 1e4 || !bundle.includes("RelayWebSocket")) {
       throw new Error("bundle looks wrong");
     }
-    if (DEPLOY_BUNDLE_SHA256) {
+    if (String(DEPLOY_BUNDLE_SHA256).length > 0) {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(bundle));
       const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
       if (hex !== DEPLOY_BUNDLE_SHA256.toLowerCase()) {
