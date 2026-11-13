@@ -58,15 +58,18 @@ export const SIP01_INDEXING = SIP01_ENABLED;
  *  schema); stored as an ordinary replaceable event. */
 export const SIP01_HEARTBEAT_KIND = 16919;
 
-/** Kinds accepted for storage in "sip01" mode. The interoperable kinds are
- *  ordinary Nostr events: kind 7/17 reactions, 10003/30003 NIP-51 bookmark
- *  lists, 39701 NIP-B0 web bookmarks, and 10040/30382-30385 NIP-85 provider
- *  and assertion events. NIP-51 private data remains client-side NIP-44
- *  ciphertext. This relay stores NIP-85 assertions but does not calculate
- *  trust scores or act as their source. Kind 5, kind 9735, heartbeat 16919
- *  capability 39698 are relay/operational events. NIP-90 job kinds are
- *  accepted only when SIP01_NIP90_ENABLED is explicitly enabled. Kind 22242 AUTH is
- *  ephemeral and is never stored.
+/** Kinds accepted for storage in "sip01" mode.
+ *  - NIP-25/73 reactions: 7 and 17.
+ *  - NIP-51 lists: 10003 and 30003; private NIP-44 ciphertext stays opaque.
+ *  - NIP-32 labels: 1985; NIP-56 reports: 1984.
+ *  - NIP-B0 public web bookmarks: 39701.
+ *  - NIP-85 provider/assertion transport: 10040 and 30382-30385. This relay
+ *    does not calculate or endorse trust scores.
+ *  - NIP-89 handler discovery: 31989 and 31990.
+ *  - Operational events: kind 5, zap receipts when payment is enabled,
+ *    heartbeat 16919 and ORBSTR capability 39698.
+ *  NIP-90 job kinds are accepted only when SIP01_NIP90_ENABLED is enabled.
+ *  AUTH kind 22242 is ephemeral and is never stored.
  */
 export const SIP01_NIP90_ENABLED = false;
 
