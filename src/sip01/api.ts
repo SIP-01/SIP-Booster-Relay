@@ -77,10 +77,12 @@ export async function getSip01Stats(session: Session) {
   ]);
 
   const metrics: Record<string, number> = {};
-  for (const row of metricsRows.results ?? []) {
+  for (const row of (metricsRows.results ?? []) as Array<{ key: string; value: number }>) {
     metrics[row.key as string] = row.value as number;
   }
 
+  const last24hRow = last24h.results?.[0] as { n?: number } | undefined;
+  const last7dRow = last7d.results?.[0] as { n?: number } | undefined;
   const sizeBytes = await getDatabaseSizeBytes(session);
 
   const totalsRow = (totals.results?.[0] ?? {}) as Record<string, number>;
@@ -88,8 +90,8 @@ export async function getSip01Stats(session: Session) {
     documents: totalsRow.documents ?? 0,
     observations: totalsRow.observations ?? 0,
     indexers: totalsRow.indexers ?? 0,
-    observations_24h: ((last24h.results?.[0]?.n as number) ?? 0),
-    observations_7d: ((last7d.results?.[0]?.n as number) ?? 0),
+    observations_24h: last24hRow?.n ?? 0,
+    observations_7d: last7dRow?.n ?? 0,
     top_hosts: topHosts.results ?? [],
     top_languages: topLanguages.results ?? [],
     top_mime_types: topMimes.results ?? [],
