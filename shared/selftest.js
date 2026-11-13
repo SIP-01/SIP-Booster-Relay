@@ -19,7 +19,7 @@
  */
 
 import { sha256HexSync, sha256Hex, bytesToHex, hexToBytes } from './sha256.js';
-import { SIP01_NOSTR_COMPATIBLE_KINDS } from './nostr-nip-kinds.js';
+import { SIP01_NOSTR_COMPATIBLE_KINDS, isNip90EventKind, evaluateEventExpiration } from './nostr-nip-kinds.js';
 import {
   SIP01_KIND,
   normalizeIndexUrl,
@@ -92,6 +92,34 @@ export async function runAllTests(log = () => {}) {
     for (const kind of [39697, 7, 17, 10003, 30003, 39701, 10040, 30382, 30383, 30384, 30385]) {
       assert(SIP01_NOSTR_COMPATIBLE_KINDS.includes(kind), `SIP relay profile blocks required Nostr kind ${kind}`);
     }
+  });
+
+  await test('relay profile accepts NIP-32 labels and NIP-89 handler discovery', async () => {
+    for (const kind of [1985, 31989, 31990]) {
+      assert(SIP01_NOSTR_COMPATIBLE_KINDS.includes(kind), `SIP relay profile blocks required Nostr kind ${kind}`);
+    }
+  });
+
+  await test('NIP-90 event kinds map exactly to request, result, and feedback ranges', async () => {
+    for (const kind of [5000, 5999, 6000, 6999, 7000]) {
+      assert(isNip90EventKind(kind), `NIP-90 kind ${kind} was not recognized`);
+    }
+    for (const kind of [4999, 7001, 31990]) {
+      assert(!isNip90EventKind(kind), `non-NIP-90 kind ${kind} was incorrectly recognized`);
+    }
+  });
+
+  await test('NIP-40 expiration accepts live events and expires at the exact second', async () => {
+    eq(evaluateEventExpiration([], 100).expired, false, 'no expiration must remain live');
+    eq(evaluateEventExpiration([['expiration', '101']], 100).expired, false, 'future expiration must remain live');
+    eq(evaluateEventExpiration([['expiration', '100']], 100).expired, true, 'expires at timestamp');
+    eq(evaluateEventExpiration([['expiration', '101'], ['expiration', '99']], 100).expiresAt, 99, 'earliest expiry wins');
+  });
+
+  await test('NIP-40 expiration rejects malformed timestamps', async () => {
+    eq(evaluateEventExpiration([['expiration', 'soon']], 100).valid, false, 'malformed timestamp accepted');
+    eq(evaluateEventExpiration([['expiration', '-1']], 100).valid, false, 'negative timestamp accepted');
+    eq(evaluateEventExpiration([['expiration', '9007199254740992']], 100).valid, false, 'unsafe timestamp accepted');
   });
 
   // ---------------------------------------------------------------- SHA-256
