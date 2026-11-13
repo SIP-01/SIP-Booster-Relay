@@ -1135,7 +1135,19 @@ function buildCountQuery(filter: NostrFilter): { sql: string; params: any[] } {
 // Query builder
 function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
   const params: any[] = [];
-  const conditions: string[] = [];
+  const liveExpirationCondition = `NOT EXISTS (
+    SELECT 1 FROM tags expiration_tag
+    WHERE expiration_tag.event_id = events.id
+      AND expiration_tag.tag_name = 'expiration'
+      AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+  )`;
+  const eventExpirationCondition = `NOT EXISTS (
+    SELECT 1 FROM tags expiration_tag
+    WHERE expiration_tag.event_id = e.id
+      AND expiration_tag.tag_name = 'expiration'
+      AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+  )`;
+  const conditions: string[] = [liveExpirationCondition];
 
   let tagCount = 0;
   const directTags: Array<{ name: string; values: string[] }> = [];
@@ -1156,7 +1168,7 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
 
   if (directTags.length > 0 && otherTags.length === 0) {
     let sql: string;
-    const whereConditions: string[] = [];
+    const whereConditions: string[] = [eventExpirationCondition];
     const cacheAlias = directTags.length === 1 ? "m" : "m0";
 
     if (directTags.length === 1) {
@@ -1250,7 +1262,7 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
 
       params.push(tagFilter.name, ...tagFilter.values);
 
-      const whereConditions: string[] = [];
+      const whereConditions: string[] = [eventExpirationCondition];
 
       if (filter.ids && filter.ids.length > 0) {
         whereConditions.push(`e.id IN (${filter.ids.map(() => '?').join(',')})`);
@@ -1308,7 +1320,7 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
       INNER JOIN tags t ON e.id = t.event_id
       WHERE ${tagConditions}`;
 
-    const whereConditions: string[] = [];
+    const whereConditions: string[] = [eventExpirationCondition];
 
     if (filter.ids && filter.ids.length > 0) {
       whereConditions.push(`e.id IN (${filter.ids.map(() => '?').join(',')})`);
