@@ -1,5 +1,5 @@
 import { RelayInfo } from './types';
-import { SIP01_NOSTR_COMPATIBLE_KINDS } from '../shared/nostr-nip-kinds.js';
+import { SIP01_NOSTR_COMPATIBLE_KINDS, isSip01EventKindAllowed } from '../shared/nostr-nip-kinds.js';
 
 // ***************************** //
 // ** BEGIN EDITABLE SETTINGS ** //
@@ -42,6 +42,9 @@ export const RELAY_MODE: 'general' | 'hybrid' | 'sip01' = 'sip01';
 // ---------------------------------------------------------------------------
 
 export const SIP01_ENABLED = (RELAY_MODE as string) !== 'general';
+
+/** Enable DVM job transport only on a relay explicitly configured for it. */
+export const NIP90_ENABLED = false;
 
 /** Validate kind 39697 events at ingestion (SIP-01 §12.4) and reject
  *  malformed observations with `OK false invalid: ...`. */
@@ -424,7 +427,7 @@ export function isPubkeyAllowed(pubkey: string): boolean {
 }
 
 export function isEventKindAllowed(kind: number): boolean {
-  if (RELAY_MODE === 'sip01' && !SIP01_MODE_ALLOWED_KINDS.has(kind)) {
+  if (RELAY_MODE === 'sip01' && !isSip01EventKindAllowed(kind, NIP90_ENABLED, SIP01_HEARTBEAT_KIND)) {
     return false;
   }
   if (allowedEventKinds.size > 0 && !allowedEventKinds.has(kind)) {
