@@ -136,7 +136,7 @@ export async function orchestrateDeploy(req: DeployRequest): Promise<DeployResul
     // Supply-chain guard (audit P0-3): the bundle URL is pinned to an
     // immutable commit (DEPLOY_BUNDLE_REF); when DEPLOY_BUNDLE_SHA256 is
     // configured, verify the hash before deploying.
-    if (config.DEPLOY_BUNDLE_SHA256) {
+    if (String(config.DEPLOY_BUNDLE_SHA256).length > 0) {
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(bundle));
       const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
       if (hex !== config.DEPLOY_BUNDLE_SHA256.toLowerCase()) {
