@@ -24,6 +24,7 @@ import { Env, NostrEvent, NostrFilter, QueryResult, Nip05Response } from './type
 import * as config from './config';
 import { RelayWebSocket } from './durable-object';
 import { SIP01_KIND, validateSip01Event } from '../shared/sip01.js';
+import { evaluateEventExpiration } from '../shared/nostr-nip-kinds.js';
 import { SUPPORTED_NIP50_OPERATORS } from '../shared/search-query.js';
 import { SIP01_SCHEMA_STATEMENTS, SERVICE_SCHEMA_STATEMENTS, SCHEMA_VERSION, migrationV7Statements, migrationV8Statements, migrationV9Statements, migrationV10Statements, migrationV11Statements, migrationV12Statements, CACHED_TAG_NAMES } from './sip01/schema';
 import { ingestSip01Observation, removeSip01Observations, bumpMetric } from './sip01/ingest';
@@ -508,6 +509,16 @@ async function processEvent(event: NostrEvent, sessionId: string, env: Env): Pro
       return { success: false, message: "invalid: event id does not match content" };
     }
 
+    // NIP-40: reject malformed or already-expired events before storage/broadcast.
+    const expiration = evaluateEventExpiration(event.tags);
+    if (!expiration.valid) {
+      await bumpMetric(session, 'events_invalid');
+      return { success: false, message: "invalid: malformed NIP-40 expiration tag" };
+    }
+    if (expiration.expired) {
+      return { success: false, message: "invalid: event has expired" };
+    }
+
     // created_at sanity: reject far-future events (NIP-01 SHOULD)
     const upperLimit = relayInfo.limitation?.created_at_upper_limit;
     if (typeof upperLimit === 'number' && upperLimit > 0) {
@@ -915,6 +926,16 @@ const EVENT_COLS_BARE = 'id, pubkey, created_at, kind, tags, content, sig';
 
 const CACHED_TAG_SET = new Set<string>(CACHED_TAG_NAMES as readonly string[]);
 
+function expirationGuard(eventIdExpression: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  return `NOT EXISTS (
+    SELECT 1 FROM tags exp
+    WHERE exp.event_id = ${eventIdExpression}
+      AND exp.tag_name = 'expiration'
+      AND CAST(exp.tag_value AS INTEGER) <= ${now}
+  )`;
+}
+
 /**
  * Build a `SELECT DISTINCT id` statement for one filter. Shared by
  * {@link buildCountQuery} (single-filter counts) and {@link countEvents}
@@ -948,6 +969,7 @@ function buildIdSelect(filter: NostrFilter): { sql: string; params: any[] } {
       let sql = `SELECT DISTINCT m.event_id AS id FROM event_tags_cache_multi m${indexHint}
         WHERE m.tag_type = ? AND m.tag_value IN (${tagFilter.values.map(() => '?').join(',')})`;
       params.push(tagFilter.name, ...tagFilter.values);
+      sql += ` AND ${expirationGuard('m.event_id')}`;
 
       if (filter.authors && filter.authors.length > 0) {
         sql += ` AND m.pubkey IN (${filter.authors.map(() => '?').join(',')})`;
@@ -984,6 +1006,7 @@ function buildIdSelect(filter: NostrFilter): { sql: string; params: any[] } {
         WHERE m0.tag_type = ? AND m0.tag_value IN (${firstTag.values.map(() => '?').join(',')})`;
 
       params.push(firstTag.name, ...firstTag.values);
+      sql += ` AND ${expirationGuard('m0.event_id')}`;
       for (const tagFilter of directTags.slice(1)) {
         params.push(tagFilter.name, ...tagFilter.values);
       }
@@ -1018,11 +1041,13 @@ function buildIdSelect(filter: NostrFilter): { sql: string; params: any[] } {
         INNER JOIN tags t ON e.id = t.event_id
         WHERE t.tag_name = ? AND t.tag_value IN (${tagFilter.values.map(() => '?').join(',')})`;
       params.push(tagFilter.name, ...tagFilter.values);
+      sql += ` AND ${expirationGuard('e.id')}`;
 
       if (filter.authors && filter.authors.length > 0) {
         sql += ` AND e.pubkey IN (${filter.authors.map(() => '?').join(',')})`;
         params.push(...filter.authors);
       }
+      sql += ` AND ${expirationGuard('e.id')}`;
       if (filter.kinds && filter.kinds.length > 0) {
         sql += ` AND e.kind IN (${filter.kinds.map(() => '?').join(',')})`;
         params.push(...filter.kinds);
@@ -1076,6 +1101,7 @@ function buildIdSelect(filter: NostrFilter): { sql: string; params: any[] } {
 
   // No tag filters
   let sql = "SELECT id FROM events";
+  conditions.push(expirationGuard('events.id'));
 
   if (filter.ids && filter.ids.length > 0) {
     conditions.push(`id IN (${filter.ids.map(() => '?').join(',')})`);
@@ -1175,6 +1201,8 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
       }
     }
 
+    whereConditions.push(expirationGuard('e.id'));
+
     if (filter.ids && filter.ids.length > 0) {
       whereConditions.push(`e.id IN (${filter.ids.map(() => '?').join(',')})`);
       params.push(...filter.ids);
@@ -1229,7 +1257,7 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
 
       params.push(tagFilter.name, ...tagFilter.values);
 
-      const whereConditions: string[] = [];
+      const whereConditions: string[] = [expirationGuard('e.id')];
 
       if (filter.ids && filter.ids.length > 0) {
         whereConditions.push(`e.id IN (${filter.ids.map(() => '?').join(',')})`);
@@ -1287,7 +1315,7 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
       INNER JOIN tags t ON e.id = t.event_id
       WHERE ${tagConditions}`;
 
-    const whereConditions: string[] = [];
+    const whereConditions: string[] = [expirationGuard('e.id')];
 
     if (filter.ids && filter.ids.length > 0) {
       whereConditions.push(`e.id IN (${filter.ids.map(() => '?').join(',')})`);
@@ -1361,6 +1389,8 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
   }
 
   let sql = `SELECT ${EVENT_COLS_BARE} FROM events${indexHint}`;
+
+  conditions.push(expirationGuard('events.id'));
 
   if (filter.ids && filter.ids.length > 0) {
     conditions.push(`id IN (${filter.ids.map(() => '?').join(',')})`);
@@ -1737,7 +1767,7 @@ async function querySyncItems(filter: NostrFilter, env: Env): Promise<{ items: A
   await ensureDatabase(env.RELAY_DATABASE);
   const session = env.RELAY_DATABASE.withSession('first-unconstrained');
 
-  const conditions: string[] = [];
+  const conditions: string[] = [expirationGuard('events.id')];
   const params: any[] = [];
 
   if (filter.ids && filter.ids.length > 0) {
@@ -1813,8 +1843,12 @@ function handleRelayInfoRequest(request: Request, env: Env): Response {
   // Advertise exactly what is enabled — never more.
   const nips = new Set<number>([1, 5, 9, 11, 16, 33, 42]);
   if (NIP45_ENABLED) nips.add(45);
+  nips.add(32);
+  nips.add(40);
+  nips.add(89);
   if (NIP50_ENABLED) nips.add(50);
   if (NIP77_ENABLED) nips.add(77);
+  if (config.NIP90_ENABLED) nips.add(90);
   responseInfo.supported_nips = [...nips].sort((a, b) => a - b);
 
   // SIP-01 capability block (SIP-01 §15).
