@@ -42,6 +42,7 @@ import {
 import { verifyEventSignature, hasPaidForRelay, processEvent, queryEvents, countEvents, executeSearch, querySyncItems, calculateQueryComplexity, ensureDatabase, NEG_MAX_ITEMS } from './relay-worker';
 import { Negentropy, NegentropyStorageVector, hexToBytes as negHexToBytes, bytesToHex as negBytesToHex } from '../shared/negentropy.js';
 import { SIP01_KIND, extractSip01Fields } from '../shared/sip01.js';
+import { evaluateEventExpiration } from '../shared/nostr-nip-kinds.js';
 import { parseSearchQuery, matchSip01Search } from '../shared/search-query.js';
 import { bumpMetric } from './sip01/ingest';
 import { executeSearchCount } from './sip01/search';
@@ -74,6 +75,16 @@ interface CacheEntry {
 interface PaymentCacheEntry {
   hasPaid: boolean;
   timestamp: number;
+}
+
+function withoutExpiredEvents(result: QueryResult): QueryResult {
+  return {
+    ...result,
+    events: result.events.filter((event) => {
+      const expiration = evaluateEventExpiration(event.tags);
+      return expiration.valid && !expiration.expired;
+    }),
+  };
 }
 
 export class RelayWebSocket implements DurableObject {
@@ -313,7 +324,7 @@ export class RelayWebSocket implements DurableObject {
 
     if (this.activeQueries.has(cacheKey)) {
       dbg('Returning in-flight query result (deduplication)');
-      return await this.activeQueries.get(cacheKey)!;
+      return withoutExpiredEvents(await this.activeQueries.get(cacheKey)!);
     }
 
     // Check Cloudflare global cache first
@@ -329,7 +340,7 @@ export class RelayWebSocket implements DurableObject {
           await globalCache.delete(globalCacheKey);
         } else {
           dbg('Returning globally cached query result');
-          const result = await globalCached.json() as QueryResult;
+          const result = withoutExpiredEvents(await globalCached.json() as QueryResult);
 
           this.queryCache.set(cacheKey, {
             result,
@@ -351,14 +362,14 @@ export class RelayWebSocket implements DurableObject {
     if (cached && Date.now() - cached.timestamp < this.QUERY_CACHE_TTL) {
       cached.accessCount++;
       cached.lastAccessed = Date.now();
-      return cached.result;
+      return withoutExpiredEvents(cached.result);
     }
 
     const queryPromise = queryEvents(filters, bookmark, this.env);
     this.activeQueries.set(cacheKey, queryPromise);
 
     try {
-      const result = await queryPromise;
+      const result = withoutExpiredEvents(await queryPromise);
 
       this.queryCache.set(cacheKey, {
         result,
