@@ -41,7 +41,7 @@ export const RELAY_MODE: 'general' | 'hybrid' | 'sip01' = 'sip01';
 // SIP-01 (Search Index Protocol) settings
 // ---------------------------------------------------------------------------
 
-export const SIP01_ENABLED = RELAY_MODE !== 'general';
+export const SIP01_ENABLED = (RELAY_MODE as string) !== 'general';
 
 /** Validate kind 39697 events at ingestion (SIP-01 §12.4) and reject
  *  malformed observations with `OK false invalid: ...`. */
@@ -158,7 +158,7 @@ export const COUNT_MAX_ESTIMATE = 50000;
 export const PAYMENT_MODE: 'free' | 'donation' | 'pay-to-relay' = 'free';
 
 // Derived for upstream-compatible checks.
-export const PAY_TO_RELAY_ENABLED = PAYMENT_MODE === 'pay-to-relay';
+export const PAY_TO_RELAY_ENABLED = (PAYMENT_MODE as string) === 'pay-to-relay';
 
 export const relayNpub = "npub1jzha7heltdlq5tdc5uqw0a8d4e2zl9022f8phmjj9h8fhjem0v2qmtdeke"; // Use your own npub
 export const RELAY_ACCESS_PRICE_SATS = 212121; // Price in SATS for relay access
@@ -319,7 +319,7 @@ export const antiSpamKinds = new Set([
 
 // Blocked pubkeys
 // Add pubkeys in hex format to block write access
-export const blockedPubkeys = new Set([
+export const blockedPubkeys = new Set<string>([
   // ... pubkeys that are explicitly blocked
 ]);
 
@@ -434,10 +434,10 @@ export function isEventKindAllowed(kind: number): boolean {
 }
 
 export function isIndexerAllowed(pubkey: string): boolean {
-  if (SIP01_INDEXER_POLICY === 'allowlist') {
+  if ((SIP01_INDEXER_POLICY as string) === 'allowlist') {
     return sip01AllowedIndexers.has(pubkey);
   }
-  if (SIP01_INDEXER_POLICY === 'blocklist') {
+  if ((SIP01_INDEXER_POLICY as string) === 'blocklist') {
     return !sip01BlockedIndexers.has(pubkey);
   }
   return true;
