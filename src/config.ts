@@ -1,4 +1,5 @@
 import { RelayInfo } from './types';
+import { SIP01_NOSTR_COMPATIBLE_KINDS } from '../shared/nostr-nip-kinds.js';
 
 // ***************************** //
 // ** BEGIN EDITABLE SETTINGS ** //
@@ -15,15 +16,17 @@ import { RelayInfo } from './types';
 /**
  * RELAY_MODE controls what this relay accepts:
  *
- *  - "sip01"   — SIP-01 optimized index relay. Only kind 39697 observations
- *                (plus kind 5 deletions, kind 9735 zap receipts when payment
- *                is enabled, kind 16919 crawler heartbeats so the
- *                ecosystem's network-health view works against this relay,
- *                and kind 39698 ORBSTR capability announcements so the
- *                ecosystem's capability directory works against this relay)
- *                are accepted for storage. Reads stay fully NIP-01
- *                compatible. This is the recommended mode for a dedicated
- *                search-index node.
+ *  - "sip01"   — SIP-01 optimized index relay. It accepts kind 39697
+ *                observations plus the narrowly-scoped interoperable Nostr
+ *                side-channel kinds needed by search clients: NIP-25/73
+ *                reactions, NIP-51 bookmark lists, NIP-B0 public web
+ *                bookmarks, and NIP-85 provider/assertion events. It also
+ *                accepts kind 5 deletions, kind 9735 zap receipts when payment
+ *                is enabled, kind 16919 crawler heartbeats and kind 39698
+ *                ORBSTR capability announcements. 39697 alone receives
+ *                SIP-01 validation/indexing; other events retain generic
+ *                NIP-01 semantics. NIP-85 assertions are transported, not
+ *                computed or endorsed by this relay.
  *  - "hybrid"  — General Nostr relay + first-class SIP-01 indexing. All
  *                kinds are accepted (subject to the allow/block lists
  *                below); kind 39697 additionally gets validated and indexed.
@@ -38,7 +41,7 @@ export const RELAY_MODE: 'general' | 'hybrid' | 'sip01' = 'sip01';
 // SIP-01 (Search Index Protocol) settings
 // ---------------------------------------------------------------------------
 
-export const SIP01_ENABLED = RELAY_MODE !== 'general';
+export const SIP01_ENABLED = (RELAY_MODE as string) !== 'general';
 
 /** Validate kind 39697 events at ingestion (SIP-01 §12.4) and reject
  *  malformed observations with `OK false invalid: ...`. */
@@ -55,12 +58,22 @@ export const SIP01_INDEXING = SIP01_ENABLED;
  *  schema); stored as an ordinary replaceable event. */
 export const SIP01_HEARTBEAT_KIND = 16919;
 
-/** Kinds accepted for storage in "sip01" mode (kind 5 = deletions, kind
- *  9735 = zap receipts for payment verification, kind 16919 = crawler
- *  heartbeats, kind 39698 = ORBSTR capability announcements, stored
- *  unvalidated as ordinary addressable events). NIP-42 auth events (kind
- *  22242) are never stored by any mode. */
-export const SIP01_MODE_ALLOWED_KINDS = new Set<number>([39697, 5, 9735, SIP01_HEARTBEAT_KIND, 39698]);
+/** Kinds accepted for storage in "sip01" mode. The interoperable kinds are
+ *  ordinary Nostr events: kind 7/17 reactions, 10003/30003 NIP-51 bookmark
+ *  lists, 39701 NIP-B0 web bookmarks, and 10040/30382-30385 NIP-85 provider
+ *  and assertion events. NIP-51 private data remains client-side NIP-44
+ *  ciphertext. This relay stores NIP-85 assertions but does not calculate
+ *  trust scores or act as their source. Kind 5, kind 9735, heartbeat 16919
+ *  and capability 39698 are relay/operational events. Kind 22242 AUTH is
+ *  ephemeral and is never stored.
+ */
+export const SIP01_MODE_ALLOWED_KINDS = new Set<number>([
+  ...SIP01_NOSTR_COMPATIBLE_KINDS,
+  5,
+  9735,
+  SIP01_HEARTBEAT_KIND,
+  39698,
+]);
 
 /** Per-indexer write rate limit for kind 39697 (token bucket: sustained
  *  rate per ms + burst capacity). Crawlers publish bursts of observations;
@@ -145,7 +158,7 @@ export const COUNT_MAX_ESTIMATE = 50000;
 export const PAYMENT_MODE: 'free' | 'donation' | 'pay-to-relay' = 'free';
 
 // Derived for upstream-compatible checks.
-export const PAY_TO_RELAY_ENABLED = PAYMENT_MODE === 'pay-to-relay';
+export const PAY_TO_RELAY_ENABLED = (PAYMENT_MODE as string) === 'pay-to-relay';
 
 export const relayNpub = "npub1jzha7heltdlq5tdc5uqw0a8d4e2zl9022f8phmjj9h8fhjem0v2qmtdeke"; // Use your own npub
 export const RELAY_ACCESS_PRICE_SATS = 212121; // Price in SATS for relay access
@@ -237,7 +250,7 @@ export const relayInfo: RelayInfo = {
   description: "A serverless SIP-01 search index relay — decentralized web-index observations (Nostr kind 39697) on Cloudflare Workers + D1. One shared decentralized index. Many independent indexers. No single owner.",
   pubkey: "90afdf5f3f5b7e0a2db8a700e7f4edae542f95ea524e1bee522dce9bcb3b7b14",
   contact: "npub1jzha7heltdlq5tdc5uqw0a8d4e2zl9022f8phmjj9h8fhjem0v2qmtdeke",
-  supported_nips: [1, 5, 9, 11, 16, 33, 42, 45, 50, 77],
+  supported_nips: [1, 5, 9, 11, 16, 25, 33, 42, 45, 50, 51, 73, 77],
   software: "https://github.com/NostrDanish/SIP-Booster-Relay",
   version: "1.1.0",
   icon: "https://raw.githubusercontent.com/NostrDanish/SIP-Booster-Relay/main/images/icon.png",
@@ -258,7 +271,7 @@ export const relayInfo: RelayInfo = {
     // min_pow_difficulty: 0,
     auth_required: AUTH_REQUIRED,
     payment_required: PAY_TO_RELAY_ENABLED,
-    restricted_writes: PAY_TO_RELAY_ENABLED || SIP01_INDEXER_POLICY === 'allowlist',
+    restricted_writes: PAY_TO_RELAY_ENABLED || (SIP01_INDEXER_POLICY as string) === 'allowlist',
     // created_at_lower_limit: 0,
     created_at_upper_limit: 900, // reject events more than 15 min in the future
     default_limit: 100,
@@ -306,7 +319,7 @@ export const antiSpamKinds = new Set([
 
 // Blocked pubkeys
 // Add pubkeys in hex format to block write access
-export const blockedPubkeys = new Set([
+export const blockedPubkeys = new Set<string>([
   // ... pubkeys that are explicitly blocked
 ]);
 
@@ -421,10 +434,10 @@ export function isEventKindAllowed(kind: number): boolean {
 }
 
 export function isIndexerAllowed(pubkey: string): boolean {
-  if (SIP01_INDEXER_POLICY === 'allowlist') {
+  if ((SIP01_INDEXER_POLICY as string) === 'allowlist') {
     return sip01AllowedIndexers.has(pubkey);
   }
-  if (SIP01_INDEXER_POLICY === 'blocklist') {
+  if ((SIP01_INDEXER_POLICY as string) === 'blocklist') {
     return !sip01BlockedIndexers.has(pubkey);
   }
   return true;

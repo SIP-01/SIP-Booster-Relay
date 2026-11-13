@@ -19,6 +19,7 @@
  */
 
 import { sha256HexSync, sha256Hex, bytesToHex, hexToBytes } from './sha256.js';
+import { SIP01_NOSTR_COMPATIBLE_KINDS } from './nostr-nip-kinds.js';
 import {
   SIP01_KIND,
   normalizeIndexUrl,
@@ -85,6 +86,13 @@ export async function runAllTests(log = () => {}) {
     if (!cond) throw new Error(msg);
   };
   const eq = (a, b, msg) => assert(a === b, `${msg} (expected ${JSON.stringify(b)}, got ${JSON.stringify(a)})`);
+
+  // ------------------------------------------ SIP relay Nostr compatibility
+  await test('sip01 relay profile accepts standard bookmark, vote, and WoT kinds', async () => {
+    for (const kind of [39697, 7, 17, 10003, 30003, 39701, 10040, 30382, 30383, 30384, 30385]) {
+      assert(SIP01_NOSTR_COMPATIBLE_KINDS.includes(kind), `SIP relay profile blocks required Nostr kind ${kind}`);
+    }
+  });
 
   // ---------------------------------------------------------------- SHA-256
   await test('sha256: known answers', async () => {
