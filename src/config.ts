@@ -1,5 +1,5 @@
 import { RelayInfo } from './types';
-import { SIP01_NOSTR_COMPATIBLE_KINDS } from '../shared/nostr-nip-kinds.js';
+import { SIP01_NOSTR_COMPATIBLE_KINDS, isNip90EventKind } from '../shared/nostr-nip-kinds.js';
 
 // ***************************** //
 // ** BEGIN EDITABLE SETTINGS ** //
@@ -64,9 +64,12 @@ export const SIP01_HEARTBEAT_KIND = 16919;
  *  and assertion events. NIP-51 private data remains client-side NIP-44
  *  ciphertext. This relay stores NIP-85 assertions but does not calculate
  *  trust scores or act as their source. Kind 5, kind 9735, heartbeat 16919
- *  and capability 39698 are relay/operational events. Kind 22242 AUTH is
+ *  capability 39698 are relay/operational events. NIP-90 job kinds are
+ *  accepted only when SIP01_NIP90_ENABLED is explicitly enabled. Kind 22242 AUTH is
  *  ephemeral and is never stored.
  */
+export const SIP01_NIP90_ENABLED = false;
+
 export const SIP01_MODE_ALLOWED_KINDS = new Set<number>([
   ...SIP01_NOSTR_COMPATIBLE_KINDS,
   5,
@@ -424,7 +427,7 @@ export function isPubkeyAllowed(pubkey: string): boolean {
 }
 
 export function isEventKindAllowed(kind: number): boolean {
-  if (RELAY_MODE === 'sip01' && !SIP01_MODE_ALLOWED_KINDS.has(kind)) {
+  if (RELAY_MODE === 'sip01' && !SIP01_MODE_ALLOWED_KINDS.has(kind) && !(SIP01_NIP90_ENABLED && isNip90EventKind(kind))) {
     return false;
   }
   if (allowedEventKinds.size > 0 && !allowedEventKinds.has(kind)) {
