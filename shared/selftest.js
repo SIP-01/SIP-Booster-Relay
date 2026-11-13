@@ -19,7 +19,7 @@
  */
 
 import { sha256HexSync, sha256Hex, bytesToHex, hexToBytes } from './sha256.js';
-import { SIP01_NOSTR_COMPATIBLE_KINDS, isNip90EventKind, evaluateEventExpiration } from './nostr-nip-kinds.js';
+import { SIP01_NOSTR_COMPATIBLE_KINDS, isSip01EventKindAllowed, isNip90EventKind, evaluateEventExpiration } from './nostr-nip-kinds.js';
 import {
   SIP01_KIND,
   normalizeIndexUrl,
@@ -89,7 +89,7 @@ export async function runAllTests(log = () => {}) {
 
   // ------------------------------------------ SIP relay Nostr compatibility
   await test('sip01 relay profile accepts standard bookmark, vote, and WoT kinds', async () => {
-    for (const kind of [39697, 7, 17, 10003, 30003, 39701, 10040, 30382, 30383, 30384, 30385]) {
+    for (const kind of [39697, 7, 17, 10003, 30003, 39701, 10040, 30382, 30383, 30384, 30385, 1985, 31989, 31990]) {
       assert(SIP01_NOSTR_COMPATIBLE_KINDS.includes(kind), `SIP relay profile blocks required Nostr kind ${kind}`);
     }
   });
@@ -107,6 +107,16 @@ export async function runAllTests(log = () => {}) {
     for (const kind of [4999, 7001, 31990]) {
       assert(!isNip90EventKind(kind), `non-NIP-90 kind ${kind} was incorrectly recognized`);
     }
+  });
+
+  await test('SIP-only relay allows NIP-90 kinds only when explicitly enabled', async () => {
+    for (const kind of [5000, 5999, 6000, 6999, 7000]) {
+      eq(isSip01EventKindAllowed(kind, false), false, `NIP-90 kind ${kind} must be opt-in`);
+      eq(isSip01EventKindAllowed(kind, true), true, `NIP-90 kind ${kind} should be accepted when enabled`);
+    }
+    eq(isSip01EventKindAllowed(39697, false), true, 'SIP-01 observations must stay enabled');
+    eq(isSip01EventKindAllowed(31990, false), true, 'NIP-89 handler info must stay enabled');
+    eq(isSip01EventKindAllowed(23194, true), false, 'NWC wallet request must not enter SIP index relay');
   });
 
   await test('NIP-40 expiration accepts live events and expires at the exact second', async () => {
