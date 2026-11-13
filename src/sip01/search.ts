@@ -67,7 +67,14 @@ export function clampSearchLimit(limit: number | undefined): number {
 
 /** Build event-level WHERE fragments shared by both search paths. */
 function eventFilterExtras(filter: NostrFilter): { conditions: string[]; params: any[] } {
-  const conditions: string[] = [];
+  const conditions: string[] = [
+    `NOT EXISTS (
+      SELECT 1 FROM tags expiration_tag
+      WHERE expiration_tag.event_id = e.id
+        AND expiration_tag.tag_name = 'expiration'
+        AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+    )`,
+  ];
   const params: any[] = [];
 
   if (filter.ids && filter.ids.length > 0) {
@@ -203,7 +210,14 @@ export async function executeSearch(session: Session, filter: NostrFilter): Prom
   const genericKinds = kinds === undefined ? undefined : otherKinds;
   const wantGeneric = kinds === undefined || (genericKinds !== undefined && genericKinds.length > 0);
   if (wantGeneric && (parsed.keywords.length > 0 || parsed.phrases.length > 0)) {
-    const conditions: string[] = [];
+    const conditions: string[] = [
+      `NOT EXISTS (
+        SELECT 1 FROM tags expiration_tag
+        WHERE expiration_tag.event_id = e.id
+          AND expiration_tag.tag_name = 'expiration'
+          AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+      )`,
+    ];
     const params: any[] = [];
 
     for (const termRaw of [...parsed.keywords, ...parsed.phrases]) {

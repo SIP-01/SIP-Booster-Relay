@@ -24,6 +24,7 @@ import { Env, NostrEvent, NostrFilter, QueryResult, Nip05Response } from './type
 import * as config from './config';
 import { RelayWebSocket } from './durable-object';
 import { SIP01_KIND, validateSip01Event } from '../shared/sip01.js';
+import { evaluateEventExpiration } from '../shared/nostr-nip-kinds.js';
 import { SUPPORTED_NIP50_OPERATORS } from '../shared/search-query.js';
 import { SIP01_SCHEMA_STATEMENTS, SERVICE_SCHEMA_STATEMENTS, SCHEMA_VERSION, migrationV7Statements, migrationV8Statements, migrationV9Statements, migrationV10Statements, migrationV11Statements, migrationV12Statements, CACHED_TAG_NAMES } from './sip01/schema';
 import { ingestSip01Observation, removeSip01Observations, bumpMetric } from './sip01/ingest';
@@ -536,6 +537,18 @@ async function processEvent(event: NostrEvent, sessionId: string, env: Env): Pro
     // NIP-16: Ephemeral events (kinds 20000-29999) are broadcast but never stored
     if (event.kind >= 20000 && event.kind < 30000) {
       return { success: true, message: "Ephemeral event broadcast" };
+    }
+
+    // NIP-40: reject malformed or already-expired stored events. Expiration
+    // does not apply to ephemeral events (handled above).
+    const expiration = evaluateEventExpiration(event.tags);
+    if (!expiration.valid) {
+      await bumpMetric(session, 'events_invalid');
+      return { success: false, message: "invalid: malformed NIP-40 expiration tag" };
+    }
+    if (expiration.expired) {
+      await bumpMetric(session, 'events_invalid');
+      return { success: false, message: "invalid: event has expired (NIP-40)" };
     }
 
     // SIP-01: validate web index observations at ingestion (§12.4) and apply
@@ -1108,13 +1121,33 @@ function buildIdSelect(filter: NostrFilter): { sql: string; params: any[] } {
 // Build COUNT query for the query precheck + single-filter counts
 function buildCountQuery(filter: NostrFilter): { sql: string; params: any[] } {
   const { sql, params } = buildIdSelect(filter);
-  return { sql: `SELECT COUNT(*) as count FROM (${sql})`, params };
+  const liveIds = `SELECT q.id FROM (${sql}) q
+    INNER JOIN events live_event ON live_event.id = q.id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM tags expiration_tag
+      WHERE expiration_tag.event_id = live_event.id
+        AND expiration_tag.tag_name = 'expiration'
+        AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+    )`;
+  return { sql: `SELECT COUNT(*) as count FROM (${liveIds})`, params };
 }
 
 // Query builder
 function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
   const params: any[] = [];
-  const conditions: string[] = [];
+  const liveExpirationCondition = `NOT EXISTS (
+    SELECT 1 FROM tags expiration_tag
+    WHERE expiration_tag.event_id = events.id
+      AND expiration_tag.tag_name = 'expiration'
+      AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+  )`;
+  const eventExpirationCondition = `NOT EXISTS (
+    SELECT 1 FROM tags expiration_tag
+    WHERE expiration_tag.event_id = e.id
+      AND expiration_tag.tag_name = 'expiration'
+      AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+  )`;
+  const conditions: string[] = [liveExpirationCondition];
 
   let tagCount = 0;
   const directTags: Array<{ name: string; values: string[] }> = [];
@@ -1135,7 +1168,7 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
 
   if (directTags.length > 0 && otherTags.length === 0) {
     let sql: string;
-    const whereConditions: string[] = [];
+    const whereConditions: string[] = [eventExpirationCondition];
     const cacheAlias = directTags.length === 1 ? "m" : "m0";
 
     if (directTags.length === 1) {
@@ -1229,7 +1262,7 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
 
       params.push(tagFilter.name, ...tagFilter.values);
 
-      const whereConditions: string[] = [];
+      const whereConditions: string[] = [eventExpirationCondition];
 
       if (filter.ids && filter.ids.length > 0) {
         whereConditions.push(`e.id IN (${filter.ids.map(() => '?').join(',')})`);
@@ -1287,7 +1320,7 @@ function buildQuery(filter: NostrFilter): { sql: string; params: any[] } {
       INNER JOIN tags t ON e.id = t.event_id
       WHERE ${tagConditions}`;
 
-    const whereConditions: string[] = [];
+    const whereConditions: string[] = [eventExpirationCondition];
 
     if (filter.ids && filter.ids.length > 0) {
       whereConditions.push(`e.id IN (${filter.ids.map(() => '?').join(',')})`);
@@ -1665,12 +1698,17 @@ async function queryEvents(filters: NostrFilter[], bookmark: string, env: Env): 
       }
     }
 
-    const events = Array.from(eventSet.values()).sort((a, b) => {
-      if (b.created_at !== a.created_at) {
-        return b.created_at - a.created_at;
-      }
-      return a.id.localeCompare(b.id);
-    });
+    const events = Array.from(eventSet.values())
+      .filter((event) => {
+        const expiration = evaluateEventExpiration(event.tags);
+        return expiration.valid && !expiration.expired;
+      })
+      .sort((a, b) => {
+        if (b.created_at !== a.created_at) {
+          return b.created_at - a.created_at;
+        }
+        return a.id.localeCompare(b.id);
+      });
 
     const newBookmark = session.getBookmark();
     dbg(`Found ${events.length} events. New bookmark: ${newBookmark}`);
@@ -1705,7 +1743,14 @@ async function countEvents(filters: NostrFilter[], bookmark: string, env: Env): 
       continue;
     }
     const { sql, params: p } = buildIdSelect(filter);
-    selects.push(sql);
+    selects.push(`SELECT q.id FROM (${sql}) q
+      INNER JOIN events live_event ON live_event.id = q.id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM tags expiration_tag
+        WHERE expiration_tag.event_id = live_event.id
+          AND expiration_tag.tag_name = 'expiration'
+          AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+      )`);
     params.push(...p);
   }
 
@@ -1737,7 +1782,14 @@ async function querySyncItems(filter: NostrFilter, env: Env): Promise<{ items: A
   await ensureDatabase(env.RELAY_DATABASE);
   const session = env.RELAY_DATABASE.withSession('first-unconstrained');
 
-  const conditions: string[] = [];
+  const conditions: string[] = [
+    `NOT EXISTS (
+      SELECT 1 FROM tags expiration_tag
+      WHERE expiration_tag.event_id = events.id
+        AND expiration_tag.tag_name = 'expiration'
+        AND CAST(expiration_tag.tag_value AS INTEGER) <= CAST(strftime('%s', 'now') AS INTEGER)
+    )`,
+  ];
   const params: any[] = [];
 
   if (filter.ids && filter.ids.length > 0) {
@@ -1811,7 +1863,7 @@ function handleRelayInfoRequest(request: Request, env: Env): Response {
   };
 
   // Advertise exactly what is enabled — never more.
-  const nips = new Set<number>([1, 5, 9, 11, 16, 33, 42]);
+  const nips = new Set<number>([1, 5, 9, 11, 16, 33, 40, 42]);
   if (NIP45_ENABLED) nips.add(45);
   if (NIP50_ENABLED) nips.add(50);
   if (NIP77_ENABLED) nips.add(77);
