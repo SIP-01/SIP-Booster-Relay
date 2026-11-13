@@ -1047,7 +1047,6 @@ function buildIdSelect(filter: NostrFilter): { sql: string; params: any[] } {
         sql += ` AND e.pubkey IN (${filter.authors.map(() => '?').join(',')})`;
         params.push(...filter.authors);
       }
-      sql += ` AND ${expirationGuard('e.id')}`;
       if (filter.kinds && filter.kinds.length > 0) {
         sql += ` AND e.kind IN (${filter.kinds.map(() => '?').join(',')})`;
         params.push(...filter.kinds);
@@ -1074,6 +1073,7 @@ function buildIdSelect(filter: NostrFilter): { sql: string; params: any[] } {
       let sql = `SELECT e.id FROM events e
         INNER JOIN tags t ON e.id = t.event_id
         WHERE ${tagConditions}`;
+      sql += ` AND ${expirationGuard('e.id')}`;
 
       if (filter.authors && filter.authors.length > 0) {
         sql += ` AND e.pubkey IN (${filter.authors.map(() => '?').join(',')})`;
@@ -1843,8 +1843,12 @@ function handleRelayInfoRequest(request: Request, env: Env): Response {
   // Advertise exactly what is enabled — never more.
   const nips = new Set<number>([1, 5, 9, 11, 16, 33, 42]);
   if (NIP45_ENABLED) nips.add(45);
+  nips.add(25);
   nips.add(32);
   nips.add(40);
+  nips.add(51);
+  nips.add(73);
+  nips.add(85);
   nips.add(89);
   if (NIP50_ENABLED) nips.add(50);
   if (NIP77_ENABLED) nips.add(77);
