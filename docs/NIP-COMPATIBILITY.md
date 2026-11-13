@@ -14,18 +14,22 @@ conformance suite or by design review against the NIP text; advertised in
 | 42 | Authentication | ✅ | Challenge/AUTH round-trip, hibernation-safe, `auth-required:`/`restricted:` OK prefixes; optional (`AUTH_REQUIRED`) |
 | 45 | COUNT | ✅ | `["COUNT", id, {count, approximate}]`; multiple plain filters OR'd with dedup (UNION); complexity-guarded. Relay-profile extension: `search` supported for kind 39697 filters (full operator set + `distinct:author`/`distinct:domain`); `search` on other kinds refused with `CLOSED` |
 | 50 | Search | ✅ | `search` field; SIP-01 operators for kind 39697 (ranked) with relay-profile semantics (`before:`/`after:` → `published`; repeated ops OR; `language:` alias for `lang:`); content substring matching for other kinds; unknown extensions ignored |
+| 25 | Reactions | ✅ | Kinds 7 and 17 are accepted and returned as ordinary NIP-01 events; web reactions can be queried with NIP-73 `#k` and `#i` |
+| 51 | Lists | ✅ | Kinds 10003 and 30003 use generic NIP-01 replaceable/addressable semantics; private list content remains opaque NIP-44 ciphertext |
+| 73 | External identifiers | ✅ | NIP-73 `i` and `k` tags are retained and indexed (including backfill from schema v12) |
 | 77 | Negentropy sync | ✅ | NEG-OPEN/NEG-MSG/NEG-CLOSE/NEG-ERR; Negentropy V1 (version byte 0x61), frame-size-limited splitting, per-session item cap |
 | 57 | Zaps | partial | kind 9735 receipts verified for the optional pay-to-relay policy (not a zap service) |
 
-Not implemented / not advertised: NIP-02, 04, 17, 65 (client-side or
+Not implemented / not advertised: NIP-02, 04, 65 (client-side or
 out of scope for an index relay); NIP-13 PoW (config placeholder only);
 NIP-40 expiration (events are retained per pruning policy);
 NIP-70 relay-gated writes (use allowlists instead).
 
 ## NIP-25 / NIP-73 / bookmark interoperability
 
-This relay treats these event kinds as ordinary NIP-01 events; it does not
-rewrite or decrypt their payloads.
+The SIP-focused write profile explicitly accepts these interoperable event
+families. They use generic NIP-01 storage and query paths; the relay does not
+rewrite, decrypt, or infer private meaning from their payloads.
 
 - Native NIP-25 reactions (kind 7) and external-content reactions (kind 17)
   are accepted by the generic event path.
@@ -35,13 +39,17 @@ rewrite or decrypt their payloads.
 - NIP-51 bookmark lists (kinds 10003 and 30003) and NIP-B0 public bookmarks
   (kind 39701) are stored and returned as generic events. The relay does not
   decrypt private NIP-51 content.
-- NIP-85 provider lists (kind 10040) and assertion events (kinds 30382–30385)
-  are generic NIP-01 events. The relay does not calculate or endorse trust
-  scores; the client verifies the selected provider, signature and subject.
+- NIP-85 provider lists (kind 10040) and assertions (kinds 30382–30385) are
+  accepted and transported as generic NIP-01 addressable events. This relay is
+  **not** an NIP-85 scoring provider: it does not calculate, sign, or endorse
+  trust assertions. The consuming engine must select the provider, verify its
+  signatures and service identity, and match the exact target subject.
 
 A kind-17 web-reaction query can use a baseline filter with kinds [17],
-tag k equal to web, and tag i equal to the normalized URL. These tag filters
-work on fresh databases and upgraded databases after migration v12.
+tag k equal to web, and tag i equal to the normalized URL. Those tag filters
+work on fresh databases and upgraded databases after migration v12. The SIP-
+focused write allowlist also accepts the above bookmark and assertion kinds;
+no private NIP-51 URL is published in a public NIP-B0 event.
 
 ## Message-level summary
 
