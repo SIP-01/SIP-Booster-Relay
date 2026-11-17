@@ -25,7 +25,7 @@ This is a **fork of [Nosflare](https://github.com/Spl0itable/nosflare) (MIT)** t
 
 ## What it does
 
-- **Validates at the door** — every kind 39697 event is checked against the SIP-01 v1 schema: URL normalization (§7), `d` ↔ `u` consistency, `x` ↔ content consistency, signatures, hard size caps. Invalid observations get `OK false invalid: …` and never reach the index.
+- **Validates at the door** — kind 39697 observations are checked against the SIP-01 core wire schema (`v="1"`; compatible with spec v1.3): URL normalization (§7), `d` ↔ `u` consistency, `x` ↔ content consistency, signatures, hard size caps. Invalid observations get `OK false invalid: …` and never reach the index.
 - **Indexes for search** — a document/observation/indexer model on top of the canonical event store: one document row per `d` (URL identity), one observation row per live `(pubkey, d)`, one indexer row per publishing key. Provenance is never merged.
 - **NIP-50 search with web operators** — `site:` `domain:` `url:` `inurl:` `title:` `topic:` `type:` `platform:` `category:` `network:` `country:` `mime:` `filetype:` `source:` `lang:` `before:` `after:` `distinct:domain`, negations, plus relay-profile `indexer:` / `x:` / `d:`.
 - **NIP-77 federation** — negentropy set reconciliation so relays sync indexes efficiently: `["NEG-OPEN","sync",{"kinds":[39697]}, …]`.
