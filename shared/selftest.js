@@ -200,6 +200,24 @@ export async function runAllTests(log = () => {}) {
     });
   }
 
+  await test('sip01 v1.3: optional role/proto/a hints are accepted as unknown tags', async () => {
+    const event = {
+      ...EXAMPLE_EVENT_SELF_CONSISTENT,
+      tags: [
+        ...EXAMPLE_EVENT_SELF_CONSISTENT.tags,
+        ['role', 'tool'],
+        ['proto', 'mcp'],
+        ['proto', 'http'],
+        ['a', '39698:' + 'a'.repeat(64) + ':example-tool'],
+      ],
+    };
+    const v = await validateSip01Event(event);
+    assert(v.valid, `v1.3 optional hints were rejected: ${v.errors.join('; ')}`);
+    assert(v.notices.some((n) => n.includes('role')), 'role hint was not reported as ignored');
+    assert(v.notices.some((n) => n.includes('proto')), 'proto hint was not reported as ignored');
+    assert(v.notices.some((n) => n.includes('a')), 'capability pointer was not reported as ignored');
+  });
+
   await test('sip01: unknown extension tags → notice, not rejection', async () => {
     const event = {
       ...EXAMPLE_EVENT_SELF_CONSISTENT,

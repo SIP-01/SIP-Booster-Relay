@@ -1,7 +1,7 @@
 /**
  * SIP-01 (Search Index Protocol) — canonical implementation for this relay.
  *
- * Byte-compatible with the SIP-01 v1.2 specification
+ * Implements the SIP-01 v1.3 kind-39697 core wire profile (schema `v="1"`); optional v1.3 role/proto/a hints are accepted as unknown forward-compatible tags but are not structured-index fields.
  * (https://github.com/NostrDanish/SIP-01 → public/spec/SIP-01.md) and with
  * every ecosystem implementation:
  *
