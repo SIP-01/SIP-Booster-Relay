@@ -1,7 +1,7 @@
 # SIP-01 support profile
 
 This relay implements the [SIP-01](https://github.com/NostrDanish/SIP-01)
-Search Index Protocol (spec v1.2). The canonical implementation is
+Search Index Protocol (spec v1.3, kind-39697 core-compatible profile). The canonical implementation is
 `shared/sip01.js`, byte-compatible with the specification's §13 test vectors
 and with the ecosystem implementations (Crawlstr, Indexstr, UNCAGED-ENGINE,
 0xSearchstr, UNCAGED-Index-Relay).
@@ -20,9 +20,17 @@ and Schnorr signature → relay kind policy → indexer policy → event size ca
 - `l` matches `^[a-z]{2}$` (bare ISO 639-1 form, §12.5)
 - `x` must be the correct `sha256(title + "\n" + description)` (§8)
 - `published` numeric; `source` ≤ 100 chars
-- extension tags (`type`, `platform`, `category`, `network`, `country`,
-  `mime`) validated against their registry shapes (§9.2)
+- recognised extension tags (`type`, `platform`, `category`, `network`,
+  `country`, `mime`) validated against their registry shapes (§9.2)
 - unknown tags are ignored (§9.1 forwards compatibility) and noted in logs
+
+**v1.3 compatibility boundary:** kind 39697 still requires `v="1"`. Optional
+`role`/`proto` hints and a standard `a` pointer to a kind-39698 capability
+announcement are treated as unknown forward-compatible tags: the validator
+accepts the event and records a notice, while the relay retains its raw Nostr
+event. These hints are not parsed into structured search fields. This relay
+does not provide a kind-39698 capability directory or invoke announced
+services.
 
 Failures are rejected with `OK false invalid: <reason>` and counted in the
 `sip01_validation_failures` metric. They never reach the index.
